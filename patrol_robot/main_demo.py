@@ -111,11 +111,29 @@ class PatrolRobotNode(Node):
 
             # ══════════════════════════════════════════
             elif self.state == 'RETURNING':
-                self.get_logger().info('[RETURNING] Closing motor, going home...')
+                self.get_logger().info('[RETURNING] Closing motor...')
                 self.motor.close_mouth()
-                self.navigator.go_home()
-                self.active_machine = None
-                self.state = 'IDLE'
+
+                # Check if another machine is already running before going home
+                machines = self.glowforge.get_running_machines()
+
+                # Filter out the machine we just visited
+                current_serial = self.active_machine.get('serial', '') if self.active_machine else ''
+                next_machines = [m for m in machines if m.get('serial', '') != current_serial]
+
+                if next_machines:
+                    self.active_machine = next_machines[0]
+                    name = self.active_machine['name']
+                    user = self.active_machine['username']
+                    self.get_logger().info(
+                        f'[RETURNING] Another machine running: {name} (user: {user}) — skipping home.'
+                    )
+                    self.state = 'NAVIGATING'
+                else:
+                    self.get_logger().info('[RETURNING] No other machines running. Navigating home.')
+                    self.navigator.go_home()
+                    self.active_machine = None
+                    self.state = 'IDLE'
 
 
 def main():
