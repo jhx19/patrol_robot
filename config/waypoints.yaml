@@ -1,0 +1,12 @@
+waypoints:
+  home:
+    x: -1.83
+    y:  2.08
+    qz: -0.87
+    qw:  0.50
+
+  laser_station_1:
+    x:  1.34
+    y: -1.62
+    qz:  0.66
+    qw:  0.75
