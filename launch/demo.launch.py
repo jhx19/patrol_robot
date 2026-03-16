@@ -14,7 +14,7 @@ Optional arguments:
 What this launches
 ──────────────────
  On the Raspberry Pi (via SSH):
-   t= 0s  turtlebot3_bringup  robot.launch.py
+   t= 0s  turtlebot3_gix_bringup  robot.launch.py
    t= 0s  v4l2_camera_node    (camera feed)
    t=10s  human_detection     (YOLO / ONNX service)
    t=12s  motor_power enable  (SetBool service call)
@@ -52,11 +52,11 @@ from launch.conditions import IfCondition
 
 # ── Timing constants (seconds) ────────────────────────────────────────────────
 T_PI_BRINGUP      =  0.0   # SSH: robot bringup + camera
-T_NAV2            =  5.0   # Nav2 stack (waits for /scan to appear)
-T_PI_DETECTION    = 10.0   # SSH: human detection service on Pi
-T_PI_MOTOR_ENABLE = 12.0   # SSH: enable motor power
-T_RVIZ            = 18.0   # RViz (after Nav2 map loads)
-T_PATROL          = 20.0   # patrol robot state machine
+T_NAV2            = 15.0   # Nav2 stack (wait for Pi odom TF to be ready)
+T_PI_DETECTION    = 20.0   # SSH: human detection service on Pi
+T_PI_MOTOR_ENABLE = 22.0   # SSH: enable motor power
+T_RVIZ            = 28.0   # RViz (after Nav2 map loads)
+T_PATROL          = 30.0   # patrol robot state machine
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -66,7 +66,7 @@ def generate_launch_description():
 
     # ── Launch arguments ──────────────────────────────────────────────────────
     robot_ip_arg = DeclareLaunchArgument(
-        'robot_ip', default_value='192.168.0.200',
+        'robot_ip', default_value='10.155.234.215',
         description='IP address of the Raspberry Pi on the robot')
 
     robot_user_arg = DeclareLaunchArgument(
@@ -117,17 +117,22 @@ def generate_launch_description():
         ]
 
     # ── Pi processes ──────────────────────────────────────────────────────────
+    # All SSH commands on the Pi must source ROS2 and set env vars first.
+    SBC_SETUP = (
+        "source /opt/ros/humble/setup.bash && "
+        "source ~/turtlebot3_ws/install/setup.bash && "
+        "export LDS_MODEL=LDS-01 && "
+        "export TURTLEBOT3_MODEL=waffle && "
+        "export ROS_DOMAIN_ID=38 && "
+    )
 
     # 1. Robot bringup (runs indefinitely)
     pi_bringup = ExecuteProcess(
         cmd=['ssh', '-o', 'StrictHostKeyChecking=no',
              PythonExpression(["'", robot_user, "@", robot_ip, "'"]),
              PythonExpression([
-                 "'bash -lc \\\"source /opt/ros/humble/setup.bash && "
-                 "source ~/turtlebot3_ws/install/setup.bash && "
-                 "export TURTLEBOT3_MODEL=waffle && "
-                 "export LDS_MODEL=LDS-02 && "
-                 "ros2 launch turtlebot3_bringup robot.launch.py\\\"'"
+                 f"'bash -lc \\\"{SBC_SETUP}"
+                 "ros2 launch turtlebot3_gix_bringup hardware.launch.py\\\"'"
              ])],
         output='screen',
         name='pi_bringup',
@@ -138,8 +143,7 @@ def generate_launch_description():
         cmd=['ssh', '-o', 'StrictHostKeyChecking=no',
              PythonExpression(["'", robot_user, "@", robot_ip, "'"]),
              PythonExpression([
-                 "'bash -lc \\\"source /opt/ros/humble/setup.bash && "
-                 "source ~/turtlebot3_ws/install/setup.bash && "
+                 f"'bash -lc \\\"{SBC_SETUP}"
                  "ros2 run v4l2_camera v4l2_camera_node "
                  "--ros-args -p video_device:=/dev/video0 "
                  "-p image_size:=[640,480]\\\"'"
@@ -157,8 +161,7 @@ def generate_launch_description():
                 cmd=['ssh', '-o', 'StrictHostKeyChecking=no',
                      PythonExpression(["'", robot_user, "@", robot_ip, "'"]),
                      PythonExpression([
-                         "'bash -lc \\\"source /opt/ros/humble/setup.bash && "
-                         "source ~/turtlebot3_ws/install/setup.bash && "
+                         f"'bash -lc \\\"{SBC_SETUP}"
                          "ros2 run patrol_robot human_detection "
                          "--ros-args "
                          "-p model_path:=/home/ubuntu/turtlebot3_ws/yolov8n.onnx "
@@ -179,8 +182,7 @@ def generate_launch_description():
                 cmd=['ssh', '-o', 'StrictHostKeyChecking=no',
                      PythonExpression(["'", robot_user, "@", robot_ip, "'"]),
                      PythonExpression([
-                         "'bash -lc \\\"source /opt/ros/humble/setup.bash && "
-                         "source ~/turtlebot3_ws/install/setup.bash && "
+                         f"'bash -lc \\\"{SBC_SETUP}"
                          "ros2 service call /motor_power "
                          "std_srvs/srv/SetBool \\\\\\\"{data: true}\\\\\\\"\\\"'"
                      ])],
