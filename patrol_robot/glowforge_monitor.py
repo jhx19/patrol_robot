@@ -5,6 +5,10 @@ import requests
 import time
 from bs4 import BeautifulSoup
 
+MONITORED_SERIALS = {
+    'WYC-332', 'CVR-883', 'RRV-334',
+    'JRM-724', 'HVW-296', 'HCK-847',
+}
 
 class GlowforgeMonitor:
     def __init__(self, email: str, password: str):
@@ -72,17 +76,15 @@ class GlowforgeMonitor:
     #  Public interface used by main_demo
     # ------------------------------------------------------------------ #
     def get_running_machines(self) -> list[dict]:
-        """
-        Returns list of dicts for machines currently printing.
-        Each dict: {serial, name, username, job_title, time_remaining, duration}
-        """
         running = []
         for m in self._get_machines():
+            if m.get('serial') not in MONITORED_SERIALS:
+                continue                          # ← skip non-2F machines
             activity = m.get('activity')
             if not activity:
                 continue
             state = activity.get('state', '')
-            tr = activity.get('time_remaining', 0)
+            tr  = activity.get('time_remaining', 0)
             dur = activity.get('duration', 0)
             if state == 'printing' and tr < dur:
                 running.append({
@@ -93,7 +95,7 @@ class GlowforgeMonitor:
                     'time_remaining': tr,
                     'duration':       dur,
                 })
-        return running#!/usr/bin/env python3
+        return running
 """Glowforge machine status monitor — query-only interface."""
 
 import requests

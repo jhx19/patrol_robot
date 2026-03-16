@@ -18,7 +18,7 @@ def send_alert(machine_info: dict):
     mins = int(machine_info.get('time_remaining', 0)) // 60
     secs = int(machine_info.get('time_remaining', 0)) % 60
 
-    subject = f"⚠️ SAFETY ALERT: Unattended laser engraver detected!"
+    subject = f"⚠️ SAFETY ALERT: {machine_info.get('username')} left laser {machine_info.get('name')} unattended!"
     body = f"""
 Safety Alert from Patrol Robot
 

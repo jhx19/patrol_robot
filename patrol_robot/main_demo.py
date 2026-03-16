@@ -23,8 +23,12 @@ IDLE_POLL_SEC      = 10
 
 # Map: machine serial → waypoint name (add more for multiple machines)
 MACHINE_WAYPOINTS = {
-    'default': 'laser_station_1',   # fallback for any machine
-    # 'GF-ABC123': 'laser_station_2',
+    'WYC-332': 'glowforge_001',   # Glowforge-2F-01
+    'CVR-883': 'glowforge_002',   # Glowforge-2F-02
+    'RRV-334': 'glowforge_003',   # Glowforge-2F-03
+    'JRM-724': 'glowforge_004',   # Glowforge-2F-04
+    'HVW-296': 'glowforge_005',   # Glowforge-2F-05
+    'HCK-847': 'glowforge_006',   # Glowforge-2F-06
 }
 # ─────────────────────────────────────────────────
 
