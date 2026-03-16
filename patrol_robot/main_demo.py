@@ -18,11 +18,10 @@ from .human_detector     import HumanDetector
 from .motor_controller   import MotorController
 from .navigator          import Navigator
 from .alert_sender       import send_alert
+from .credentials import load_credentials
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
-GLOWFORGE_EMAIL    = 'sunyhg@uw.edu'
-GLOWFORGE_PASSWORD = 'sunyuhang'
 IDLE_POLL_SEC      = 10
 
 MACHINE_WAYPOINTS = {
@@ -40,6 +39,7 @@ MACHINE_WAYPOINTS = {
 class PatrolRobotNode(Node):
     def __init__(self):
         super().__init__('patrol_robot')
+        creds = load_credentials()
 
         # ── Sim mode parameter ────────────────────────────────────────────────
         self.declare_parameter('sim_data_file', '')
@@ -52,7 +52,10 @@ class PatrolRobotNode(Node):
             self.glowforge = GlowforgeMonitor(sim_data_file=sim_data_file)
         else:
             self.get_logger().info('Real Glowforge API mode.')
-            self.glowforge = GlowforgeMonitor(GLOWFORGE_EMAIL, GLOWFORGE_PASSWORD)
+            self.glowforge = GlowforgeMonitor(
+                email=creds['glowforge']['email'],
+                password=creds['glowforge']['password'],
+            )
 
         self.motor     = MotorController(self)
         self.navigator = Navigator(self)

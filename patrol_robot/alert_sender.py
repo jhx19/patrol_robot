@@ -3,18 +3,19 @@
 
 import smtplib
 from email.mime.text import MIMEText
+from .credentials import load_credentials
 
-
-# ── 修改这里 ─────────────────────────────────────
-SENDER_EMAIL    = 'your_gmail@gmail.com'
-SENDER_PASSWORD = 'your_app_password'   # Gmail App Password (16 chars)
-RECIPIENT_EMAIL = 'sunyhg@uw.edu'
 SMTP_SERVER     = 'smtp.gmail.com'
 SMTP_PORT       = 587
 # ─────────────────────────────────────────────────
 
 
 def send_alert(machine_info: dict):
+    creds     = load_credentials()
+    gmail     = creds['gmail']
+    SENDER_EMAIL    = gmail['sender_email']
+    SENDER_PASSWORD = gmail['sender_password']
+    RECIPIENT_EMAIL = gmail['recipient_email']
     mins = int(machine_info.get('time_remaining', 0)) // 60
     secs = int(machine_info.get('time_remaining', 0)) % 60
 
