@@ -83,10 +83,22 @@ def generate_launch_description():
         default_value=os.path.join(pkg_share, 'config', 'patrol_robot.rviz'),
         description='RViz config file')
 
-    robot_ip   = LaunchConfiguration('robot_ip')
-    robot_user = LaunchConfiguration('robot_user')
-    map_file   = LaunchConfiguration('map_file')
+    sim_data_arg = DeclareLaunchArgument(
+        'sim_data',
+        default_value='',
+        description=(
+            'Filename of fake Glowforge data JSON for simulation mode. '
+            'File must be in <package_share>/test/. '
+            'Examples: fake_one_machine.json  fake_two_machines.json '
+            'Leave empty for real Glowforge API.'
+        )
+    )
+
+    robot_ip    = LaunchConfiguration('robot_ip')
+    robot_user  = LaunchConfiguration('robot_user')
+    map_file    = LaunchConfiguration('map_file')
     rviz_config = LaunchConfiguration('rviz_config')
+    sim_data    = LaunchConfiguration('sim_data')
 
     # ── SSH helper: builds "ssh user@ip 'bash -c \"...\""' ───────────────────
     def ssh_cmd(user, ip, bash_command: str) -> list:
@@ -226,6 +238,14 @@ def generate_launch_description():
                 executable='patrol_robot',
                 name='patrol_robot',
                 output='screen',
+                parameters=[{
+                    'sim_data_file': PythonExpression([
+                        # If sim_data is set, resolve full path inside package share
+                        # Otherwise pass empty string (real mode)
+                        "'' if '", sim_data, "' == '' else '",
+                        os.path.join(pkg_share, 'test'), "/' + '", sim_data, "'"
+                    ])
+                }],
             ),
         ]
     )
@@ -237,6 +257,7 @@ def generate_launch_description():
         robot_user_arg,
         map_file_arg,
         rviz_config_arg,
+        sim_data_arg,
 
         # t=0: Pi bringup + camera
         LogInfo(msg='[LAUNCH] Connecting to robot Pi and starting bringup...'),

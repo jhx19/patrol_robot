@@ -8,9 +8,9 @@ from builtin_interfaces.msg import Duration
 import time
 
 
-OPEN_POSITION  = 1.0   # radians — 张开
-CLOSE_POSITION = 0.0   # radians — 闭合
-MOVE_DURATION  = 2     # seconds
+OPEN_POSITION  = -1.7   # radians — mouth open
+CLOSE_POSITION = -3.0   # radians — mouth closed
+MOVE_DURATION  = 2      # seconds
 
 
 class MotorController:
@@ -34,7 +34,7 @@ class MotorController:
 
     def open_mouth(self):
         self._send_position(OPEN_POSITION)
-        time.sleep(MOVE_DURATION + 0.5)   # wait for motion to complete
+        time.sleep(MOVE_DURATION + 0.5)
 
     def close_mouth(self):
         self._send_position(CLOSE_POSITION)
