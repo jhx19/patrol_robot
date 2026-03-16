@@ -213,6 +213,41 @@ def generate_launch_description():
         ]
     )
 
+    # ── Remote PC: Initial pose (home waypoint) ───────────────────────────────
+    # Publishes home waypoint to /initialpose so AMCL knows the robot's
+    # starting location. Robot must be physically placed at the home position.
+    # Coordinates match waypoints.yaml: home (x=5.3054, y=0.1956, qz=0.9980, qw=0.0625)
+    initial_pose = TimerAction(
+        period=T_NAV2 + 3.0,
+        actions=[
+            LogInfo(msg='[LAUNCH] Publishing initial pose (home waypoint)...'),
+            ExecuteProcess(
+                cmd=[
+                    'ros2', 'topic', 'pub', '--once',
+                    '/initialpose',
+                    'geometry_msgs/msg/PoseWithCovarianceStamped',
+                    (
+                        '{"header": {"frame_id": "map"}, '
+                        '"pose": {'
+                        '"pose": {'
+                        '"position": {"x": 5.3054, "y": 0.1956, "z": 0.0}, '
+                        '"orientation": {"x": 0.0, "y": 0.0, "z": 0.9980, "w": 0.0625}'
+                        '}, '
+                        '"covariance": [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, '
+                        '0.0, 0.25, 0.0, 0.0, 0.0, 0.0, '
+                        '0.0, 0.0, 0.0, 0.0, 0.0, 0.0, '
+                        '0.0, 0.0, 0.0, 0.0, 0.0, 0.0, '
+                        '0.0, 0.0, 0.0, 0.0, 0.0, 0.0, '
+                        '0.0, 0.0, 0.0, 0.0, 0.0, 0.06853]'
+                        '}}'
+                    ),
+                ],
+                output='screen',
+                name='initial_pose',
+            ),
+        ]
+    )
+
     # ── Remote PC: RViz ───────────────────────────────────────────────────────
     rviz = TimerAction(
         period=T_RVIZ,
@@ -266,6 +301,9 @@ def generate_launch_description():
 
         # t=5s: Nav2
         nav2_launch,
+
+        # t=8s: Initial pose (home waypoint → AMCL)
+        initial_pose,
 
         # t=10s: Pi human detection
         pi_human_detection,
