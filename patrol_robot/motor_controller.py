@@ -8,8 +8,8 @@ from builtin_interfaces.msg import Duration
 import time
 
 
-OPEN_POSITION  = -1.7   # radians — mouth open
-CLOSE_POSITION = -3.0   # radians — mouth closed
+OPEN_POSITION  = -2.0   # radians — mouth open
+CLOSE_POSITION = -2.7   # radians — mouth closed
 MOVE_DURATION  = 2      # seconds
 
 

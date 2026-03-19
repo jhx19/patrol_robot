@@ -2,34 +2,36 @@
 demo.launch.py
 --------------
 Single-command launch for the patrol robot demo.
+Uses a 2-probe event-driven chain with a retry loop for the initial pose.
 
-Usage:
-  ros2 launch patrol_robot demo.launch.py
+Startup chain:
 
-Optional arguments:
-  robot_ip:=<Pi IP>          default: 192.168.0.200
-  robot_user:=<Pi username>  default: ubuntu
-  map_file:=<path/to/map.yaml>  default: <package_share>/maps/gix_map.yaml
+  1. Pi bringup + camera start immediately.
 
-What this launches
-──────────────────
- On the Raspberry Pi (via SSH):
-   t= 0s  turtlebot3_gix_bringup  robot.launch.py
-   t= 0s  v4l2_camera_node    (camera feed)
-   t=10s  human_detection     (YOLO / ONNX service)
-   t=12s  motor_power enable  (SetBool service call)
+  2. PROBE 1 — wait_for_odom:
+     Waits for /odom messages to flow from the Pi.
+     The Pi's ros2_control only broadcasts odom after OpenCR firmware
+     has fully initialised (serial, baudrate, IMU calibration, motors ACTIVE).
+     → Triggers: Nav2 launch + Probe 2
 
- On the Remote PC (direct):
-   t= 5s  Nav2 stack          (map_server, AMCL, planners, controllers)
-   t=18s  RViz2               (pre-configured view)
-   t=20s  patrol_robot        (main state machine)
+  3. PROBE 2 — wait_for_map_tf (with initial pose retry loop):
+     Publishes /initialpose every 2 seconds until AMCL confirms it by
+     broadcasting the map→odom transform on /tf.
 
-Prerequisites
-─────────────
-  • Passwordless SSH from Remote PC → Pi must be set up:
-      ssh-copy-id ubuntu@<robot_ip>
-  • Map saved at: src/patrol_robot/maps/gix_map.yaml  (+ .pgm)
-  • yolov8n.onnx at: ~/turtlebot3_ws/yolov8n.onnx on the Pi
+     Why a retry loop, not a one-shot publish:
+       AMCL's subscription to /initialpose is created in on_activate().
+       The /reinitialize_global_localization service (our previous probe signal)
+       is also created in on_activate(), but service registration in the ROS2
+       middleware and subscription registration are not atomic — the service
+       can appear on the service list before the subscriber is fully wired up.
+       A one-shot publish that lands in that window is silently dropped and
+       AMCL never logs "initialPoseReceived", so pfInitialized_ stays false,
+       AMCL keeps warning "Please set the initial pose", and the map frame
+       never appears. The retry loop guarantees AMCL eventually receives and
+       acknowledges the pose regardless of when its subscription becomes ready.
+
+     → Triggers: pi_human_detection + pi_motor_power + rviz
+                 + 3s settle → patrol_robot (MISSION START)
 """
 
 import os
@@ -41,23 +43,39 @@ from launch.actions import (
     DeclareLaunchArgument,
     ExecuteProcess,
     IncludeLaunchDescription,
-    TimerAction,
+    RegisterEventHandler,
     LogInfo,
+    TimerAction,
 )
+from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
-from launch.conditions import IfCondition
 
 
-# ── Timing constants (seconds) ────────────────────────────────────────────────
-T_PI_BRINGUP      =  0.0   # SSH: robot bringup + camera
-T_NAV2            = 15.0   # Nav2 stack (wait for Pi odom TF to be ready)
-T_PI_DETECTION    = 20.0   # SSH: human detection service on Pi
-T_PI_MOTOR_ENABLE = 22.0   # SSH: enable motor power
-T_RVIZ            = 28.0   # RViz (after Nav2 map loads)
-T_PATROL          = 30.0   # patrol robot state machine
-# ─────────────────────────────────────────────────────────────────────────────
+# Initial pose values — must match waypoints.yaml home waypoint
+HOME_X  =  5.3054
+HOME_Y  =  0.1956
+HOME_QZ =  0.9980
+HOME_QW =  0.0625
+
+# Formatted as a single-line YAML string for ros2 topic pub
+INITIAL_POSE_MSG = (
+    '{'
+    '"header": {"frame_id": "map"}, '
+    '"pose": {'
+    '"pose": {'
+    f'"position": {{"x": {HOME_X}, "y": {HOME_Y}, "z": 0.0}}, '
+    f'"orientation": {{"x": 0.0, "y": 0.0, "z": {HOME_QZ}, "w": {HOME_QW}}}'
+    '}, '
+    '"covariance": [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, '
+    '0.0, 0.25, 0.0, 0.0, 0.0, 0.0, '
+    '0.0, 0.0, 0.0, 0.0, 0.0, 0.0, '
+    '0.0, 0.0, 0.0, 0.0, 0.0, 0.0, '
+    '0.0, 0.0, 0.0, 0.0, 0.0, 0.0, '
+    '0.0, 0.0, 0.0, 0.0, 0.0, 0.06853]'
+    '}}'
+)
 
 
 def generate_launch_description():
@@ -89,7 +107,7 @@ def generate_launch_description():
         description=(
             'Filename of fake Glowforge data JSON for simulation mode. '
             'File must be in <package_share>/test/. '
-            'Examples: fake_one_machine.json  fake_two_machines.json '
+            'Examples: sim1.json  sim2.json  '
             'Leave empty for real Glowforge API.'
         )
     )
@@ -100,24 +118,7 @@ def generate_launch_description():
     rviz_config = LaunchConfiguration('rviz_config')
     sim_data    = LaunchConfiguration('sim_data')
 
-    # ── SSH helper: builds "ssh user@ip 'bash -c \"...\""' ───────────────────
-    def ssh_cmd(user, ip, bash_command: str) -> list:
-        """
-        Returns an ExecuteProcess cmd list that SSHes into the Pi and runs
-        bash_command inside a login shell (so .bashrc env vars are loaded).
-        """
-        return [
-            'ssh', '-o', 'StrictHostKeyChecking=no',
-            PythonExpression(["'", user, "@", ip, "'"]),
-            PythonExpression([
-                f"'bash -lc \\\"source /opt/ros/humble/setup.bash && "
-                f"source ~/turtlebot3_ws/install/setup.bash && "
-                f"{bash_command}\\\"'"
-            ]),
-        ]
-
-    # ── Pi processes ──────────────────────────────────────────────────────────
-    # All SSH commands on the Pi must source ROS2 and set env vars first.
+    # ── Pi environment preamble ───────────────────────────────────────────────
     SBC_SETUP = (
         "source /opt/ros/humble/setup.bash && "
         "source ~/turtlebot3_ws/install/setup.bash && "
@@ -126,7 +127,7 @@ def generate_launch_description():
         "export ROS_DOMAIN_ID=38 && "
     )
 
-    # 1. Robot bringup (runs indefinitely)
+    # ── Pi: robot bringup ─────────────────────────────────────────────────────
     pi_bringup = ExecuteProcess(
         cmd=['ssh', '-o', 'StrictHostKeyChecking=no',
              PythonExpression(["'", robot_user, "@", robot_ip, "'"]),
@@ -138,7 +139,7 @@ def generate_launch_description():
         name='pi_bringup',
     )
 
-    # 2. Camera node on Pi (runs indefinitely)
+    # ── Pi: camera node ───────────────────────────────────────────────────────
     pi_camera = ExecuteProcess(
         cmd=['ssh', '-o', 'StrictHostKeyChecking=no',
              PythonExpression(["'", robot_user, "@", robot_ip, "'"]),
@@ -152,170 +153,183 @@ def generate_launch_description():
         name='pi_camera',
     )
 
-    # 3. Human detection service on Pi (delayed — wait for camera to come up)
-    pi_human_detection = TimerAction(
-        period=T_PI_DETECTION,
-        actions=[
-            LogInfo(msg='[LAUNCH] Starting human detection service on Pi...'),
-            ExecuteProcess(
-                cmd=['ssh', '-o', 'StrictHostKeyChecking=no',
-                     PythonExpression(["'", robot_user, "@", robot_ip, "'"]),
-                     PythonExpression([
-                         f"'bash -lc \\\"{SBC_SETUP}"
-                         "ros2 run patrol_robot human_detection "
-                         "--ros-args "
-                         "-p model_path:=/home/ubuntu/turtlebot3_ws/yolov8n.onnx "
-                         "-p image_topic:=/image_raw\\\"'"
-                     ])],
-                output='screen',
-                name='pi_human_detection',
-            ),
-        ]
+    # ── PROBE 1: odom is live ─────────────────────────────────────────────────
+    # Wait for the Pi's ros2_control to fully activate and publish /odom.
+    wait_for_odom = ExecuteProcess(
+        name='wait_for_odom',
+        cmd=[
+            'bash', '-c',
+            'echo "[patrol] PROBE 1: waiting for Pi /odom..."; '
+            'until ros2 topic info /odom 2>/dev/null '
+            '      | grep -q "Publisher count: [1-9]"; '
+            'do sleep 1; done; '
+            # Confirm messages are actually flowing (not just topic registered)
+            'ros2 topic echo --once /odom > /dev/null 2>&1; '
+            'sleep 2; '
+            'echo "[patrol] PROBE 1 done: odom live → launching Nav2"'
+        ],
+        output='screen'
     )
 
-    # 4. Enable motor power on Pi (one-shot service call)
-    pi_motor_power = TimerAction(
-        period=T_PI_MOTOR_ENABLE,
-        actions=[
-            LogInfo(msg='[LAUNCH] Enabling motor power on Pi...'),
-            ExecuteProcess(
-                cmd=['ssh', '-o', 'StrictHostKeyChecking=no',
-                     PythonExpression(["'", robot_user, "@", robot_ip, "'"]),
-                     PythonExpression([
-                         f"'bash -lc \\\"{SBC_SETUP}"
-                         "ros2 service call /motor_power "
-                         "std_srvs/srv/SetBool \\\\\\\"{data: true}\\\\\\\"\\\"'"
-                     ])],
-                output='screen',
-                name='pi_motor_enable',
-            ),
-        ]
+    # ── Nav2 stack ────────────────────────────────────────────────────────────
+    nav2_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('turtlebot3_navigation2'),
+                'launch', 'navigation2.launch.py'
+            )
+        ),
+        launch_arguments={
+            'map': map_file,
+            'use_sim_time': 'false',
+        }.items(),
     )
 
-    # ── Remote PC: Nav2 stack ─────────────────────────────────────────────────
-    # Uses turtlebot3_navigation2 which includes:
-    #   map_server, AMCL, bt_navigator, planner_server,
-    #   controller_server, lifecycle_manager
-    nav2_launch = TimerAction(
-        period=T_NAV2,
-        actions=[
-            LogInfo(msg='[LAUNCH] Starting Nav2 stack...'),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(
-                        get_package_share_directory('turtlebot3_navigation2'),
-                        'launch', 'navigation2.launch.py'
-                    )
-                ),
-                launch_arguments={
-                    'map': map_file,
-                    'use_sim_time': 'false',
-                }.items(),
-            ),
-        ]
+    # ── PROBE 2: initial pose retry loop until map TF confirms ────────────────
+    #
+    # Problem with one-shot publish:
+    #   AMCL creates its /initialpose subscriber in on_activate(), at the same
+    #   time as the /reinitialize_global_localization service. Service
+    #   registration and subscription registration are not atomic in the ROS2
+    #   middleware — the service can be visible on `ros2 service list` while
+    #   the subscription is still being wired up. A single publish that lands
+    #   in this window is silently dropped. AMCL never logs "initialPoseReceived"
+    #   and pfInitialized_ stays false, causing the endless
+    #   "Please set the initial pose..." warning.
+    #
+    # Solution:
+    #   Publish /initialpose every 2 seconds in a loop.
+    #   Exit when the map→odom TF appears on /tf (i.e., AMCL confirmed the pose
+    #   and started broadcasting the map frame).
+    #   This is robust to any subscription timing race and also to AMCL
+    #   restarting or being slow to process the first message.
+    wait_for_map_tf = ExecuteProcess(
+        name='wait_for_map_tf',
+        cmd=[
+            'bash', '-c',
+            'echo "[patrol] PROBE 2: publishing initial pose (retrying every 2s until map TF confirms)..."; '
+            # Loop: publish pose, check TF, repeat until map frame appears
+            'until ros2 topic echo --once --no-daemon /tf 2>/dev/null '
+            '      | grep -q "frame_id: map"; '
+            'do '
+            f'  ros2 topic pub --once /initialpose '
+            f'    geometry_msgs/msg/PoseWithCovarianceStamped '
+            f'    \'{INITIAL_POSE_MSG}\' > /dev/null 2>&1; '
+            '  echo "[patrol] PROBE 2: pose published, waiting for map TF..."; '
+            '  sleep 2; '
+            'done; '
+            # Buffer so costmap TF listeners see several consecutive transforms
+            'sleep 2; '
+            'echo "[patrol] PROBE 2 done: map TF confirmed → Nav2 fully usable"'
+        ],
+        output='screen'
     )
 
-    # ── Remote PC: Initial pose (home waypoint) ───────────────────────────────
-    # Publishes home waypoint to /initialpose so AMCL knows the robot's
-    # starting location. Robot must be physically placed at the home position.
-    # Coordinates match waypoints.yaml: home (x=5.3054, y=0.1956, qz=0.9980, qw=0.0625)
-    initial_pose = TimerAction(
-        period=T_NAV2 + 3.0,
-        actions=[
-            LogInfo(msg='[LAUNCH] Publishing initial pose (home waypoint)...'),
-            ExecuteProcess(
-                cmd=[
-                    'ros2', 'topic', 'pub', '--once',
-                    '/initialpose',
-                    'geometry_msgs/msg/PoseWithCovarianceStamped',
-                    (
-                        '{"header": {"frame_id": "map"}, '
-                        '"pose": {'
-                        '"pose": {'
-                        '"position": {"x": 5.3054, "y": 0.1956, "z": 0.0}, '
-                        '"orientation": {"x": 0.0, "y": 0.0, "z": 0.9980, "w": 0.0625}'
-                        '}, '
-                        '"covariance": [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, '
-                        '0.0, 0.25, 0.0, 0.0, 0.0, 0.0, '
-                        '0.0, 0.0, 0.0, 0.0, 0.0, 0.0, '
-                        '0.0, 0.0, 0.0, 0.0, 0.0, 0.0, '
-                        '0.0, 0.0, 0.0, 0.0, 0.0, 0.0, '
-                        '0.0, 0.0, 0.0, 0.0, 0.0, 0.06853]'
-                        '}}'
-                    ),
-                ],
-                output='screen',
-                name='initial_pose',
-            ),
-        ]
+    # ── Pi: human detection service ───────────────────────────────────────────
+    pi_human_detection = ExecuteProcess(
+        cmd=['ssh', '-o', 'StrictHostKeyChecking=no',
+             PythonExpression(["'", robot_user, "@", robot_ip, "'"]),
+             PythonExpression([
+                 f"'bash -lc \\\"{SBC_SETUP}"
+                 "ros2 run patrol_robot human_detection "
+                 "--ros-args "
+                 "-p model_path:=/home/ubuntu/turtlebot3_ws/yolov8n.onnx "
+                 "-p image_topic:=/image_raw\\\"'"
+             ])],
+        output='screen',
+        name='pi_human_detection',
     )
 
-    # ── Remote PC: RViz ───────────────────────────────────────────────────────
-    rviz = TimerAction(
-        period=T_RVIZ,
-        actions=[
-            LogInfo(msg='[LAUNCH] Starting RViz...'),
-            Node(
-                package='rviz2',
-                executable='rviz2',
-                name='rviz2',
-                arguments=['-d', rviz_config],
-                output='screen',
-            ),
-        ]
+    # ── Pi: enable motor power ────────────────────────────────────────────────
+    pi_motor_power = ExecuteProcess(
+        cmd=['ssh', '-o', 'StrictHostKeyChecking=no',
+             PythonExpression(["'", robot_user, "@", robot_ip, "'"]),
+             PythonExpression([
+                 f"'bash -lc \\\"{SBC_SETUP}"
+                 "ros2 service call /motor_power "
+                 "std_srvs/srv/SetBool \\\\\\\"{data: true}\\\\\\\"\\\"'"
+             ])],
+        output='screen',
+        name='pi_motor_enable',
     )
 
-    # ── Remote PC: Patrol robot state machine ─────────────────────────────────
-    patrol_robot = TimerAction(
-        period=T_PATROL,
-        actions=[
-            LogInfo(msg='[LAUNCH] Starting patrol robot state machine...'),
-            Node(
-                package='patrol_robot',
-                executable='patrol_robot',
-                name='patrol_robot',
-                output='screen',
-                parameters=[{
-                    'sim_data_file': PythonExpression([
-                        # If sim_data is set, resolve full path inside package share
-                        # Otherwise pass empty string (real mode)
-                        "'' if '", sim_data, "' == '' else '",
-                        os.path.join(pkg_share, 'test'), "/' + '", sim_data, "'"
-                    ])
-                }],
-            ),
-        ]
+    # ── RViz ──────────────────────────────────────────────────────────────────
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', rviz_config],
+        output='screen',
     )
 
-    # ── Assemble ──────────────────────────────────────────────────────────────
+    # ── Patrol robot state machine ────────────────────────────────────────────
+    patrol_robot_node = Node(
+        package='patrol_robot',
+        executable='patrol_robot',
+        name='patrol_robot',
+        output='screen',
+        parameters=[{
+            'sim_data_file': PythonExpression([
+                "'' if '", sim_data, "' == '' else '",
+                os.path.join(pkg_share, 'test'), "/' + '", sim_data, "'"
+            ])
+        }],
+    )
+
+    # ── Event chain ───────────────────────────────────────────────────────────
+    #
+    #   pi_bringup ──────────────────────────────────────► (runs forever)
+    #   pi_camera  ──────────────────────────────────────► (runs forever)
+    #   wait_for_odom  (PROBE 1, starts immediately)
+    #         │ odom messages flowing
+    #         ├─► nav2_launch
+    #         └─► wait_for_map_tf  (PROBE 2: retry loop)
+    #                   │ map→odom TF confirmed (AMCL accepted the pose)
+    #                   ├─► pi_human_detection
+    #                   ├─► pi_motor_power
+    #                   ├─► rviz_node
+    #                   └─► [3 s settle]
+    #                             └─► patrol_robot  ← MISSION START
+
+    on_odom_ready = RegisterEventHandler(
+        OnProcessExit(
+            target_action=wait_for_odom,
+            on_exit=[
+                LogInfo(msg='[patrol] PROBE 1 passed: odom live → launching Nav2 + initial pose loop'),
+                nav2_launch,
+                wait_for_map_tf,
+            ]
+        )
+    )
+
+    on_map_tf_ready = RegisterEventHandler(
+        OnProcessExit(
+            target_action=wait_for_map_tf,
+            on_exit=[
+                LogInfo(msg='[patrol] PROBE 2 passed: map TF live → starting application'),
+                pi_human_detection,
+                pi_motor_power,
+                rviz_node,
+                TimerAction(period=3.0, actions=[
+                    LogInfo(msg='[patrol] ─── MISSION BEGINS ───'),
+                    patrol_robot_node,
+                ]),
+            ]
+        )
+    )
+
     return LaunchDescription([
-        # Arguments
         robot_ip_arg,
         robot_user_arg,
         map_file_arg,
         rviz_config_arg,
         sim_data_arg,
 
-        # t=0: Pi bringup + camera
-        LogInfo(msg='[LAUNCH] Connecting to robot Pi and starting bringup...'),
+        LogInfo(msg='[patrol] Starting Pi bringup + camera + odom probe...'),
         pi_bringup,
         pi_camera,
+        wait_for_odom,
 
-        # t=5s: Nav2
-        nav2_launch,
-
-        # t=8s: Initial pose (home waypoint → AMCL)
-        initial_pose,
-
-        # t=10s: Pi human detection
-        pi_human_detection,
-
-        # t=12s: Motor power enable
-        pi_motor_power,
-
-        # t=18s: RViz
-        rviz,
-
-        # t=20s: Patrol state machine
-        patrol_robot,
+        on_odom_ready,
+        on_map_tf_ready,
     ])
