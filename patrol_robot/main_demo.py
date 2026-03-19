@@ -26,7 +26,7 @@ IDLE_POLL_SEC      = 10
 
 MACHINE_WAYPOINTS = {
     'WYC-332': 'glowforge_001',   # Glowforge-2F-01
-    'CVR-883': 'glowforge_002',   # Glowforge-2F-02
+    'VVD-329': 'glowforge_temp',   # Glowforge-2F-02
     'RRV-334': 'glowforge_003',   # Glowforge-2F-03
     'JRM-724': 'glowforge_004',   # Glowforge-2F-04
     'HVW-296': 'glowforge_005',   # Glowforge-2F-05

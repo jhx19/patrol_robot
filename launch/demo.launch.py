@@ -54,10 +54,11 @@ from launch_ros.actions import Node
 
 
 # Initial pose values — must match waypoints.yaml home waypoint
-HOME_X  =  5.3054
-HOME_Y  =  0.1956
-HOME_QZ =  0.9980
-HOME_QW =  0.0625
+HOME_X  =  -1.3438
+HOME_Y  =  1.6652
+HOME_QZ =  -0.7965
+HOME_QW =  0.6047
+
 
 # Formatted as a single-line YAML string for ros2 topic pub
 INITIAL_POSE_MSG = (
@@ -228,14 +229,14 @@ def generate_launch_description():
     # ── Pi: human detection service ───────────────────────────────────────────
     pi_human_detection = ExecuteProcess(
         cmd=['ssh', '-o', 'StrictHostKeyChecking=no',
-             PythonExpression(["'", robot_user, "@", robot_ip, "'"]),
-             PythonExpression([
-                 f"'bash -lc \\\"{SBC_SETUP}"
-                 "ros2 run patrol_robot human_detection "
-                 "--ros-args "
-                 "-p model_path:=/home/ubuntu/turtlebot3_ws/yolov8n.onnx "
-                 "-p image_topic:=/image_raw\\\"'"
-             ])],
+            PythonExpression(["'", robot_user, "@", robot_ip, "'"]),
+            PythonExpression([
+                f"'bash -lc \\\"{SBC_SETUP}"
+                "python3 ~/turtlebot3_ws/human_detection_service.py "
+                "--ros-args "
+                "-p model_path:=/home/ubuntu/turtlebot3_ws/yolov8n.onnx "
+                "-p image_topic:=/image_raw\\\"'"
+            ])],
         output='screen',
         name='pi_human_detection',
     )

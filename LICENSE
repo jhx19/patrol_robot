@@ -1,0 +1,44 @@
+MIT License
+
+Copyright (c) 2026 TECHIN 516 Patrol Robot Team — University of Washington GIX
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+This project builds on / depends on the following third-party software:
+
+| Dependency              | License                     | Source |
+|-------------------------|-----------------------------|--------|
+| ROS 2 Humble            | Apache 2.0                  | https://github.com/ros2 |
+| TurtleBot3 packages     | Apache 2.0                  | https://github.com/ROBOTIS-GIT/turtlebot3 |
+| Nav2                    | Apache 2.0                  | https://github.com/ros-planning/navigation2 |
+| nav2_simple_commander   | Apache 2.0                  | https://github.com/ros-planning/navigation2 |
+| GIX OpenCR firmware     | Apache 2.0                  | https://github.com/GIXLabs/t516_OpenCR |
+| YOLOv8 / Ultralytics    | AGPL-3.0                    | https://github.com/ultralytics/ultralytics |
+| ONNX Runtime            | MIT                         | https://github.com/microsoft/onnxruntime |
+| OpenCV                  | Apache 2.0                  | https://github.com/opencv/opencv |
+| BeautifulSoup4          | MIT                         | https://www.crummy.com/software/BeautifulSoup/ |
+| requests                | Apache 2.0                  | https://github.com/psf/requests |
+| PyYAML                  | MIT                         | https://github.com/yaml/pyyaml |
+
+Note: YOLOv8 is licensed under AGPL-3.0. The ONNX model file (yolov8n.onnx) is
+generated offline and distributed separately from this repository; it is not
+included in this source distribution. If you redistribute the model alongside
+this software, ensure compliance with the AGPL-3.0 license.

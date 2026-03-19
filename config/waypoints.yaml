@@ -1,9 +1,10 @@
 waypoints:
   home:
-    x:  5.3054
-    y:  0.1956
-    qz: 0.9980
-    qw: 0.0625
+    x:  -1.3438
+    y:  1.6652
+    qz: -0.7965
+    qw: 0.6047
+
 
   glowforge_001:
     x: -0.0590
@@ -11,7 +12,7 @@ waypoints:
     qz: -0.7600
     qw:  0.6499
 
-  glowforge_002:
+  glowforge_temp:
     x: -0.8702
     y:  0.5927
     qz: -0.7435

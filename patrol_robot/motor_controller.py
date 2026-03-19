@@ -8,9 +8,9 @@ from builtin_interfaces.msg import Duration
 import time
 
 
-OPEN_POSITION  = -2.0   # radians — mouth open
-CLOSE_POSITION = -2.7   # radians — mouth closed
-MOVE_DURATION  = 2      # seconds
+OPEN_POSITION  = -1.0   # radians — mouth open
+CLOSE_POSITION = -1.8   # radians — mouth closed
+MOVE_DURATION  = 1.5      # seconds
 
 
 class MotorController:

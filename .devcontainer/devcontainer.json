@@ -1,0 +1,63 @@
+{
+  "name": "Patrol Robot — ROS2 Humble",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+
+  // Mount the repo into the ROS2 workspace src directory
+  "workspaceMount": "source=${localWorkspaceFolder},target=/turtlebot3_ws/src/patrol_robot,type=bind,consistency=cached",
+  "workspaceFolder": "/turtlebot3_ws/src/patrol_robot",
+
+  // Forward ROS2 DDS traffic and RViz display
+  "runArgs": [
+    "--network=host",
+    "--ipc=host",
+    "--pid=host",
+    "--env=DISPLAY=${localEnv:DISPLAY}",
+    "--env=XAUTHORITY=${localEnv:XAUTHORITY}",
+    "--volume=/tmp/.X11-unix:/tmp/.X11-unix:rw"
+  ],
+
+  "containerEnv": {
+    "TURTLEBOT3_MODEL": "waffle",
+    "LDS_MODEL": "LDS-01",
+    "ROS_DOMAIN_ID": "38",
+    "ROS_LOCALHOST_ONLY": "0"
+  },
+
+  // Build the package automatically on container create
+  "postCreateCommand": "bash -c 'cd /turtlebot3_ws && source /opt/ros/humble/setup.bash && colcon build --packages-select patrol_robot --symlink-install && echo \"source /turtlebot3_ws/install/setup.bash\" >> ~/.bashrc'",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // ROS development
+        "ms-iot.vscode-ros",
+        "ms-python.python",
+        "ms-python.pylint",
+        // YAML (for waypoints / credentials)
+        "redhat.vscode-yaml",
+        // Docker / devcontainer
+        "ms-azuretools.vscode-docker",
+        // General utilities
+        "eamodio.gitlens",
+        "streetsidesoftware.code-spell-checker"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/bin/python3",
+        "python.linting.enabled": true,
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.python"
+        },
+        "ros.rossetupscript": "/opt/ros/humble/setup.bash",
+        "yaml.schemas": {
+          "http://json.schemastore.org/github-workflow": ".github/workflows/*.yml"
+        }
+      }
+    }
+  },
+
+  "remoteUser": "root"
+}

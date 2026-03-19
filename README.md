@@ -6,20 +6,19 @@
 
 ## 📸 Robot Photo
 
-<!-- Add your robot photo here -->
 ![Robot Photo](assets/robot.jpg)
 
 ---
 
 ## 🎥 Demo Video
 
-[▶ Watch the demo](https://your-video-link-here)
+[▶ Watch the demo](https://drive.google.com/file/d/19d0dIF1H4FnUx9gYyEMpu0TyJhAPzDzj/view?usp=sharing)
 
 ---
 
-## 📖 Project Overview
-
 The patrol robot monitors 6 Glowforge laser engravers on the 2nd floor of the GIX makerspace. When a machine starts running, the robot autonomously navigates to it, opens its motorized "mouth" to reveal a camera, scans for human presence using YOLOv8, and sends an email alert if the machine is running unsupervised.
+
+The body is designed to resemble a carnivorous plant: the camera is hidden inside a hinged "mouth" that only opens when the robot arrives at a machine. This keeps the sensor protected during transit and creates a clear visual cue when the robot is scanning.
 
 ### Key Features
 
@@ -29,6 +28,7 @@ The patrol robot monitors 6 Glowforge laser engravers on the 2nd floor of the GI
 - **Motorized mouth** — Dynamixel motor conceals and reveals the camera
 - **Stuck recovery** — LiDAR-based obstacle escape with up to 5 retry attempts
 - **Multi-machine support** — visits multiple running machines in sequence without returning home between stops
+- **Audio alert** — espeak TTS via Bluetooth speaker when no human is detected
 - **Simulation mode** — full end-to-end testing without real Glowforge machines
 
 ---
@@ -98,9 +98,11 @@ The patrol robot monitors 6 Glowforge laser engravers on the 2nd floor of the GI
 
 **`human_detection_service.py`** — ROS2 service node. On each `/detect_human` call, clears stale frames then collects 10 distinct frames from `/image_raw` within 2 seconds using a `queue.Queue`. Runs YOLOv8n ONNX inference on each frame with letterbox preprocessing. Confirms human presence if **7 or more** of the 10 frames detect a person (class 0, confidence ≥ 0.5).
 
-**`motor_controller.py`** — Publishes `JointTrajectory` messages to `/gix_controller/joint_trajectory` for the `gix` joint. Open position: `-1.7 rad`. Closed position: `-3.0 rad`. 2-second motion duration with a 0.5s buffer sleep.
+**`motor_controller.py`** — Publishes `JointTrajectory` messages to `/gix_controller/joint_trajectory` for the `gix` joint. Open position: `-2.0 rad`. Closed position: `-2.7 rad`. 2-second motion duration with a 0.5s buffer sleep.
 
 **`alert_sender.py`** — Gmail SMTP alert via `starttls`. Sends machine name, operator username, job title, and time remaining to the configured recipient when no human is detected. Credentials loaded from `config/credentials.yaml`.
+
+**`audio_alert.py`** — espeak TTS playback via the default PulseAudio sink (Bluetooth speaker). Falls back to `festival` if espeak is unavailable. Repeats the safety announcement twice.
 
 **`main_demo.py`** — State machine orchestrator. Accepts `sim_data_file` ROS2 parameter for simulation mode. Loads Glowforge credentials from `config/credentials.yaml`. In RETURNING, re-polls Glowforge and routes directly to the next running machine, skipping the home waypoint.
 
@@ -123,8 +125,35 @@ The patrol robot monitors 6 Glowforge laser engravers on the 2nd floor of the GI
 
 ## ⚙️ Setup
 
-### Prerequisites
+### Option A — Dev Container (Recommended)
 
+The repo includes a `.devcontainer` configuration. Anyone with Docker and VS Code can be up and running without manually installing ROS2 or any dependencies.
+
+**Prerequisites:**
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- [VS Code](https://code.visualstudio.com/) with the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+
+```bash
+# 1. Clone the repo
+git clone <your-repo-url>
+cd patrol_robot
+
+# 2. Open in VS Code
+code .
+
+# 3. When prompted "Reopen in Container", click Yes
+#    (or press F1 → "Dev Containers: Reopen in Container")
+#
+# The container will:
+#   - Install ROS2 Humble + all system dependencies
+#   - Install Python deps (onnxruntime, requests, etc.)
+#   - Build the patrol_robot package automatically
+#   - Source the workspace in every new terminal
+```
+
+### Option B — Manual Install
+
+**Prerequisites:**
 - Ubuntu 22.04 on Remote PC
 - ROS2 Humble installed on both Remote PC and Raspberry Pi
 - TurtleBot3 packages installed
@@ -136,27 +165,25 @@ ssh-keygen -t ed25519
 ssh-copy-id ubuntu@<robot_ip>
 ```
 
-### Environment Variables
-
-Add to `~/.bashrc` on **both** Remote PC and Pi:
+**Environment variables** — add to `~/.bashrc` on **both** Remote PC and Pi:
 
 ```bash
 export TURTLEBOT3_MODEL=waffle
 export LDS_MODEL=LDS-01
-export ROS_DOMAIN_ID=30
+export ROS_DOMAIN_ID=38
 ```
 
-### Installation
+**Install Python dependencies on Pi:**
 
 ```bash
-# Clone into your workspace
-cd ~/turtlebot3_ws/src
-git clone <your-repo-url>
-
-# Install Python dependencies on Pi
 pip install onnxruntime opencv-python beautifulsoup4 requests --break-system-packages
+```
 
-# Build
+**Build:**
+
+```bash
+cd ~/turtlebot3_ws/src
+git clone <https://github.com/jhx19/patrol_robot.git>
 cd ~/turtlebot3_ws
 colcon build --packages-select patrol_robot --symlink-install
 source install/setup.bash
@@ -192,7 +219,7 @@ gmail:
 Export YOLOv8n to ONNX on the Remote PC, then copy to the Pi:
 
 ```bash
-# On Remote PC
+# On Remote PC (or inside the dev container)
 pip install ultralytics
 python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx')"
 scp yolov8n.onnx ubuntu@<robot_ip>:~/turtlebot3_ws/
@@ -209,7 +236,7 @@ scp yolov8n.onnx ubuntu@<robot_ip>:~/turtlebot3_ws/
 ssh ubuntu@<robot_ip>
 ros2 launch turtlebot3_bringup robot.launch.py
 
-# Terminal 2 — Remote PC
+# Terminal 2 — Remote PC (or inside container)
 ros2 launch turtlebot3_cartographer cartographer.launch.py use_sim_time:=false
 
 # Terminal 3 — Remote PC (drive to map the space)
@@ -235,7 +262,7 @@ ros2 run nav2_map_server map_saver_cli -f ~/turtlebot3_ws/src/patrol_robot/maps/
 ros2 launch patrol_robot demo.launch.py
 
 # With custom robot IP
-ros2 launch patrol_robot demo.launch.py robot_ip:=192.168.0.200
+ros2 launch patrol_robot demo.launch.py robot_ip:= ''
 
 # Simulation — one machine running
 ros2 launch patrol_robot demo.launch.py sim_data:=sim1.json
@@ -283,15 +310,15 @@ EOF
 # Enable motor power first
 ros2 service call /motor_power std_srvs/srv/SetBool "{data: true}"
 
-# Open mouth (-1.7 rad)
+# Open mouth (-2.0 rad)
 ros2 topic pub --once /gix_controller/joint_trajectory \
   trajectory_msgs/msg/JointTrajectory \
-  "{joint_names: ['gix'], points: [{positions: [-1.7], time_from_start: {sec: 2}}]}"
+  "{joint_names: ['gix'], points: [{positions: [-2.0], time_from_start: {sec: 2}}]}"
 
-# Close mouth (-3.0 rad)
+# Close mouth (-2.7 rad)
 ros2 topic pub --once /gix_controller/joint_trajectory \
   trajectory_msgs/msg/JointTrajectory \
-  "{joint_names: ['gix'], points: [{positions: [-3.0], time_from_start: {sec: 2}}]}"
+  "{joint_names: ['gix'], points: [{positions: [-2.7], time_from_start: {sec: 2}}]}"
 ```
 
 ### Test human detection
@@ -301,12 +328,30 @@ ros2 topic pub --once /gix_controller/joint_trajectory \
 ros2 service call /detect_human std_srvs/srv/Trigger {}
 ```
 
+### Simulation mode (no robot required)
+
+```bash
+# Confirm sim data is parsed correctly
+python3 -c "
+import json
+with open('test/sim1.json') as f:
+    data = json.load(f)
+print(data)
+"
+
+# Full sim launch (requires Nav2 + a map)
+ros2 launch patrol_robot demo.launch.py sim_data:=sim1.json
+```
+
 ---
 
 ## 📁 Package Structure
 
 ```
 patrol_robot/
+├── .devcontainer/
+│   ├── Dockerfile              # ROS2 Humble + all dependencies
+│   └── devcontainer.json       # VS Code dev container config
 ├── config/
 │   ├── waypoints.yaml              # home + 6 Glowforge waypoints
 │   ├── credentials.yaml            # ⚠️ gitignored — fill in your own values
@@ -325,13 +370,16 @@ patrol_robot/
 │   ├── motor_controller.py         # Dynamixel mouth control
 │   ├── human_detector.py           # /detect_human service client
 │   ├── alert_sender.py             # Gmail SMTP alert
+│   ├── audio_alert.py              # espeak / festival TTS alert
 │   └── credentials.py             # credentials.yaml loader
 ├── test/
 │   ├── fake_one_machine.json       # sim: 1 machine running
 │   └── fake_two_machines.json      # sim: 2 machines running
 ├── .gitignore
+├── LICENSE
 ├── package.xml
-└── setup.py
+├── setup.py
+└── setup.cfg
 ```
 
 ---
@@ -342,8 +390,10 @@ patrol_robot/
 - **Post-build path resolution** — `waypoints.yaml`, `credentials.yaml`, and map files are resolved using `ament_index_python.get_package_share_directory()`, not `__file__`-relative paths.
 - **Dynamixel motor faults** — if the motor stops responding, use Dynamixel Wizard to clear the Shutdown register before reflashing GIX firmware. The GIX firmware plays a distinct startup melody to confirm it's loaded correctly.
 - **Nav2 goal timing** — the navigator waits for the Nav2 action server before sending any goal, preventing silent rejections on startup.
+- **AMCL initial pose race** — the launch file retries `/initialpose` every 2 seconds until the `map→odom` TF appears. A single publish is unreliable because AMCL's subscription is not guaranteed to be ready when the service first becomes visible.
 - **Motor power** — must be explicitly enabled after bringup via the `/motor_power` service call (handled automatically by the launch file at t=12s).
 - **Credentials security** — `config/credentials.yaml` is gitignored. The committed `credentials.yaml.example` contains only placeholder values. Never commit your actual credentials.
+- **YOLOv8 license** — the model is AGPL-3.0. The `.onnx` file is generated and transferred manually and is not distributed in this repository.
 
 ---
 
@@ -351,4 +401,16 @@ patrol_robot/
 
 TECHIN 516 — Winter 2025, University of Washington GIX
 
+| Name | GitHub |
+|------|--------|
+| Jason Jin | https://github.com/jhx19 |
+| Lya Liu | https://github.com/peanuthater|
+| Yuhang Sun | https://github.com/helen |
+
 ---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see [LICENSE](LICENSE) for details.
+
+Note: The YOLOv8n model (not included in this repo) is subject to the **AGPL-3.0** license. See `LICENSE` for full third-party dependency information.
