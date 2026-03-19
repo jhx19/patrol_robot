@@ -405,7 +405,7 @@ TECHIN 516 — Winter 2025, University of Washington GIX
 |------|--------|
 | Jason Jin | https://github.com/jhx19 |
 | Lya Liu | https://github.com/peanuthater|
-| Yuhang Sun | https://github.com/helen |
+| Yuhang Sun | https://github.com/yhsunhelen |
 
 ---
 
