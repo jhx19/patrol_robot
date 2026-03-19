@@ -1,0 +1,379 @@
+<?xml version="1.0"?>
+<!--
+  patrol_robot.urdf.xacro
+  ───────────────────────
+  Custom TurtleBot3 Waffle description for the makerspace laser-safety patrol robot.
+
+  Kinematic tree
+  ──────────────
+  base_footprint
+    └─ base_link              (main chassis plate)
+         ├─ wheel_left_link
+         ├─ wheel_right_link
+         ├─ caster_front_link
+         ├─ caster_back_link
+         ├─ imu_link
+         ├─ base_scan          (LDS-02 LiDAR)
+         └─ body_stem_link     (carnivorous-plant stem, fixed)
+              └─ mouth_base_link  (hinge anchor, fixed)
+                   └─ mouth_link  ← gix (revolute, Y-axis)
+                        └─ camera_link  (USB camera, fixed inside mouth)
+
+  Joint limits for gix
+    open  : -1.0 rad
+    closed: -1.8 rad
+    axis  : Y  (mouth tilts forward to "open")
+-->
+<robot name="patrol_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       Properties
+  ══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- TurtleBot3 Waffle chassis -->
+  <xacro:property name="base_x_size"          value="0.266000"/>
+  <xacro:property name="base_y_size"          value="0.266000"/>
+  <xacro:property name="base_z_size"          value="0.089000"/>
+
+  <!-- Wheels (XM430-W210) -->
+  <xacro:property name="wheel_radius"         value="0.033000"/>
+  <xacro:property name="wheel_width"          value="0.018000"/>
+  <xacro:property name="wheel_separation"     value="0.287000"/>
+  <xacro:property name="wheel_x_offset"       value="-0.022000"/>
+  <xacro:property name="wheel_z_offset"       value="-0.010000"/>
+
+  <!-- Caster -->
+  <xacro:property name="caster_wheel_radius"  value="0.005000"/>
+  <xacro:property name="caster_front_x"       value="0.081500"/>
+  <xacro:property name="caster_back_x"        value="-0.177500"/>
+
+  <!-- Custom plant body -->
+  <xacro:property name="stem_radius"          value="0.035000"/>
+  <xacro:property name="stem_height"          value="0.130000"/>
+  <xacro:property name="mouth_box_x"          value="0.090000"/>
+  <xacro:property name="mouth_box_y"          value="0.070000"/>
+  <xacro:property name="mouth_box_z"          value="0.025000"/>
+
+  <!-- Camera -->
+  <xacro:property name="cam_offset_x"         value="0.040000"/>
+  <xacro:property name="cam_offset_z"         value="0.015000"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       Materials
+  ══════════════════════════════════════════════════════════════════════ -->
+  <material name="black">      <color rgba="0.05 0.05 0.05 1.0"/></material>
+  <material name="dark_grey">  <color rgba="0.30 0.30 0.30 1.0"/></material>
+  <material name="light_grey"> <color rgba="0.60 0.60 0.60 1.0"/></material>
+  <material name="plant_green"><color rgba="0.10 0.55 0.15 1.0"/></material>
+  <material name="dark_green"> <color rgba="0.05 0.35 0.08 1.0"/></material>
+  <material name="mouth_red">  <color rgba="0.75 0.10 0.10 1.0"/></material>
+  <material name="white">      <color rgba="1.00 1.00 1.00 1.0"/></material>
+  <material name="camera_grey"><color rgba="0.20 0.20 0.20 1.0"/></material>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       BASE FOOTPRINT  (virtual ground-contact frame)
+  ══════════════════════════════════════════════════════════════════════ -->
+  <link name="base_footprint"/>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+    <origin xyz="0.0 0.0 0.010" rpy="0.0 0.0 0.0"/>
+  </joint>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       BASE LINK  (chassis plate)
+  ══════════════════════════════════════════════════════════════════════ -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="-0.064 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <box size="${base_x_size} ${base_y_size} ${base_z_size}"/>
+      </geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="-0.064 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <box size="${base_x_size} ${base_y_size} ${base_z_size}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <mass value="1.3729096"/>
+      <inertia ixx="8.7002718e-03" ixy="-4.7576583e-05" ixz="1.1160499e-04"
+               iyy="8.6195418e-03" iyz="-3.5422299e-06"
+               izz="1.4612727e-02"/>
+    </inertial>
+  </link>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       WHEELS
+  ══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Left wheel -->
+  <joint name="wheel_left_joint" type="continuous">
+    <parent link="base_link"/>
+    <child  link="wheel_left_link"/>
+    <origin xyz="${wheel_x_offset} ${wheel_separation/2} ${wheel_z_offset}"
+            rpy="-1.5707963267948966 0.0 0.0"/>
+    <axis xyz="0.0 0.0 1.0"/>
+  </joint>
+
+  <link name="wheel_left_link">
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.0 0.0 0.0"/>
+      <mass value="0.1"/>
+      <inertia ixx="1.1175580e-05" ixy="-4.2369783e-11" ixz="-5.9381719e-09"
+               iyy="1.1192413e-05" iyz="-1.4400107e-11"
+               izz="2.0712558e-05"/>
+    </inertial>
+  </link>
+
+  <!-- Right wheel -->
+  <joint name="wheel_right_joint" type="continuous">
+    <parent link="base_link"/>
+    <child  link="wheel_right_link"/>
+    <origin xyz="${wheel_x_offset} -${wheel_separation/2} ${wheel_z_offset}"
+            rpy="-1.5707963267948966 0.0 0.0"/>
+    <axis xyz="0.0 0.0 1.0"/>
+  </joint>
+
+  <link name="wheel_right_link">
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.0 0.0 0.0"/>
+      <mass value="0.1"/>
+      <inertia ixx="1.1175580e-05" ixy="-4.2369783e-11" ixz="-5.9381719e-09"
+               iyy="1.1192413e-05" iyz="-1.4400107e-11"
+               izz="2.0712558e-05"/>
+    </inertial>
+  </link>
+
+  <!-- Front caster -->
+  <joint name="caster_front_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="caster_front_link"/>
+    <origin xyz="${caster_front_x} 0.0 -${wheel_radius - caster_wheel_radius}"
+            rpy="-1.5707963267948966 0.0 0.0"/>
+  </joint>
+
+  <link name="caster_front_link">
+    <visual>
+      <origin xyz="0.0 0.001 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><sphere radius="${caster_wheel_radius}"/></geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.001 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><sphere radius="${caster_wheel_radius}"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.0 0.0 0.0"/>
+      <mass value="0.01"/>
+      <inertia ixx="2.7e-07" ixy="0.0" ixz="0.0" iyy="2.7e-07" iyz="0.0" izz="2.7e-07"/>
+    </inertial>
+  </link>
+
+  <!-- Back caster -->
+  <joint name="caster_back_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="caster_back_link"/>
+    <origin xyz="${caster_back_x} 0.0 -${wheel_radius - caster_wheel_radius}"
+            rpy="-1.5707963267948966 0.0 0.0"/>
+  </joint>
+
+  <link name="caster_back_link">
+    <visual>
+      <origin xyz="0.0 0.001 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><sphere radius="${caster_wheel_radius}"/></geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.001 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><sphere radius="${caster_wheel_radius}"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.0 0.0 0.0"/>
+      <mass value="0.01"/>
+      <inertia ixx="2.7e-07" ixy="0.0" ixz="0.0" iyy="2.7e-07" iyz="0.0" izz="2.7e-07"/>
+    </inertial>
+  </link>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       IMU
+  ══════════════════════════════════════════════════════════════════════ -->
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="imu_link"/>
+    <origin xyz="-0.032 0.0 0.068" rpy="0.0 0.0 0.0"/>
+  </joint>
+
+  <link name="imu_link">
+    <visual>
+      <geometry><box size="0.010 0.010 0.010"/></geometry>
+      <material name="light_grey"/>
+    </visual>
+    <inertial>
+      <mass value="0.001"/>
+      <inertia ixx="1e-07" ixy="0.0" ixz="0.0" iyy="1e-07" iyz="0.0" izz="1e-07"/>
+    </inertial>
+  </link>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       LIDAR  (LDS-02, matches LDS_MODEL=LDS-01 footprint)
+  ══════════════════════════════════════════════════════════════════════ -->
+  <joint name="scan_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="base_scan"/>
+    <origin xyz="-0.064 0.0 0.122" rpy="0.0 0.0 0.0"/>
+  </joint>
+
+  <link name="base_scan">
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><cylinder radius="0.040" length="0.060"/></geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><cylinder radius="0.040" length="0.060"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="0.125"/>
+      <inertia ixx="1.0e-04" ixy="0.0" ixz="0.0" iyy="1.0e-04" iyz="0.0" izz="1.0e-04"/>
+    </inertial>
+  </link>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       CARNIVOROUS PLANT BODY
+
+       body_stem_link  — cylindrical green stem rising from the chassis
+       mouth_base_link — fixed anchor point at the top of the stem
+       mouth_link      — the gix revolute joint (opens/closes)
+       camera_link     — USB camera fixed inside the open mouth
+  ══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Stem: fixed to base_link, centred on top of chassis -->
+  <joint name="stem_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="body_stem_link"/>
+    <origin xyz="0.0 0.0 ${base_z_size/2 + stem_height/2}" rpy="0.0 0.0 0.0"/>
+  </joint>
+
+  <link name="body_stem_link">
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><cylinder radius="${stem_radius}" length="${stem_height}"/></geometry>
+      <material name="plant_green"/>
+    </visual>
+    <collision>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><cylinder radius="${stem_radius}" length="${stem_height}"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="0.200"/>
+      <inertia ixx="3.5e-04" ixy="0.0" ixz="0.0" iyy="3.5e-04" iyz="0.0" izz="1.2e-04"/>
+    </inertial>
+  </link>
+
+  <!-- Mouth base: fixed anchor at top of stem, offset forward slightly -->
+  <joint name="mouth_base_joint" type="fixed">
+    <parent link="body_stem_link"/>
+    <child  link="mouth_base_link"/>
+    <origin xyz="0.010 0.0 ${stem_height/2}" rpy="0.0 0.0 0.0"/>
+  </joint>
+
+  <link name="mouth_base_link">
+    <!-- Very small link, just an anchor -->
+    <visual>
+      <geometry><sphere radius="0.010"/></geometry>
+      <material name="dark_green"/>
+    </visual>
+    <inertial>
+      <mass value="0.010"/>
+      <inertia ixx="1e-06" ixy="0.0" ixz="0.0" iyy="1e-06" iyz="0.0" izz="1e-06"/>
+    </inertial>
+  </link>
+
+  <!-- GIX joint: revolute around Y — mouth tilts open/closed
+       open  = -1.0 rad  (tilted forward ~57°)
+       closed= -1.8 rad  (nearly vertical, camera hidden)
+  -->
+  <joint name="gix" type="revolute">
+    <parent link="mouth_base_link"/>
+    <child  link="mouth_link"/>
+    <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+    <axis xyz="0.0 1.0 0.0"/>
+    <limit lower="-2.0" upper="0.0" effort="2.0" velocity="1.0"/>
+    <dynamics damping="0.01" friction="0.01"/>
+  </joint>
+
+  <link name="mouth_link">
+    <!-- Red inner mouth box — visible when open, shows camera is active -->
+    <visual>
+      <origin xyz="${mouth_box_x/2} 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <box size="${mouth_box_x} ${mouth_box_y} ${mouth_box_z}"/>
+      </geometry>
+      <material name="mouth_red"/>
+    </visual>
+    <collision>
+      <origin xyz="${mouth_box_x/2} 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry>
+        <box size="${mouth_box_x} ${mouth_box_y} ${mouth_box_z}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="${mouth_box_x/2} 0.0 0.0"/>
+      <mass value="0.080"/>
+      <inertia ixx="2.5e-05" ixy="0.0" ixz="0.0" iyy="6.0e-05" iyz="0.0" izz="6.0e-05"/>
+    </inertial>
+  </link>
+
+  <!-- Camera: fixed inside the mouth, pointing outward along +X -->
+  <joint name="camera_joint" type="fixed">
+    <parent link="mouth_link"/>
+    <child  link="camera_link"/>
+    <origin xyz="${cam_offset_x} 0.0 ${cam_offset_z}" rpy="0.0 0.0 0.0"/>
+  </joint>
+
+  <link name="camera_link">
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+      <geometry><box size="0.025 0.025 0.025"/></geometry>
+      <material name="camera_grey"/>
+    </visual>
+    <inertial>
+      <mass value="0.020"/>
+      <inertia ixx="1e-06" ixy="0.0" ixz="0.0" iyy="1e-06" iyz="0.0" izz="1e-06"/>
+    </inertial>
+  </link>
+
+  <!-- Camera optical frame (ROS convention: Z forward, X right, Y down) -->
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child  link="camera_optical_link"/>
+    <origin xyz="0.0 0.0 0.0" rpy="-1.5707963267948966 0.0 -1.5707963267948966"/>
+  </joint>
+
+  <link name="camera_optical_link"/>
+
+</robot>

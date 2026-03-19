@@ -16,6 +16,7 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
         (os.path.join('share', package_name, 'maps'), glob('maps/*')),
         (os.path.join('share', package_name, 'test'), glob('test/*.json')),
+        (os.path.join('share', package_name, 'urdf'), glob('urdf/*.xacro')),
     ],
     install_requires=['setuptools'],
     entry_points={

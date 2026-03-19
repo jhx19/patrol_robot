@@ -47,6 +47,18 @@ The body is designed to resemble a carnivorous plant: the camera is hidden insid
 
 ---
 
+## 👥 Team & Work Split
+
+TECHIN 516 — Winter 2025, University of Washington GIX
+
+| Name | GitHub | Contributions |
+|------|--------|---------------|
+| **Jason Jin** | [@jhx19](https://github.com/jhx19) | Project architecture, ROS2 package setup, Nav2 integration & stuck recovery (`navigator.py`), Glowforge API monitor (`glowforge_monitor.py`), state machine (`main_demo.py`), alert system (`alert_sender.py`, `audio_alert.py`), credentials management, devcontainer & Dockerfile, launch file, URDF & RViz config, README |
+| **Lya Liu** | [@peanuthater](https://github.com/peanuthater) | Dynamixel motor integration (`motor_controller.py`), motor hardware testing, Dynamixel firmware troubleshooting, joint trajectory tuning (open/close positions and timing), physical mouth mechanism design and assembly |
+| **Yuhang Sun** | [@yhsunhelen](https://github.com/yhsunhelen) | Human detection system (`human_detection_service.py`, `human_detector.py`), YOLOv8n ONNX export and ARM deployment, multi-frame detection logic, confidence threshold tuning, camera integration and testing on Raspberry Pi |
+
+---
+
 ## 🧠 Software Architecture
 
 ### State Machine
@@ -86,6 +98,7 @@ The body is designed to resemble a carnivorous plant: the camera is hidden insid
 | `turtlebot3_bringup` | Raspberry Pi | Base robot drivers, OpenCR, wheel motors |
 | `v4l2_camera_node` | Raspberry Pi | Camera feed → `/image_raw` |
 | `human_detection_service` | Raspberry Pi | YOLO ONNX inference, `/detect_human` service |
+| `robot_state_publisher` | Remote PC | Broadcasts URDF on `/robot_description` |
 | `nav2` stack | Remote PC | Map server, AMCL, planner, controller |
 | `patrol_robot` | Remote PC | Main state machine |
 | `rviz2` | Remote PC | Visualization |
@@ -98,15 +111,15 @@ The body is designed to resemble a carnivorous plant: the camera is hidden insid
 
 **`human_detection_service.py`** — ROS2 service node. On each `/detect_human` call, clears stale frames then collects 10 distinct frames from `/image_raw` within 2 seconds using a `queue.Queue`. Runs YOLOv8n ONNX inference on each frame with letterbox preprocessing. Confirms human presence if **7 or more** of the 10 frames detect a person (class 0, confidence ≥ 0.5).
 
-**`motor_controller.py`** — Publishes `JointTrajectory` messages to `/gix_controller/joint_trajectory` for the `gix` joint. Open position: `-2.0 rad`. Closed position: `-2.7 rad`. 2-second motion duration with a 0.5s buffer sleep.
+**`motor_controller.py`** — Publishes `JointTrajectory` messages to `/gix_controller/joint_trajectory` for the `gix` joint. Open position: `-1.0 rad`. Closed position: `-1.8 rad`. 1.5-second motion duration with a 0.5s buffer sleep.
 
-**`alert_sender.py`** — Gmail SMTP alert via `starttls`. Sends machine name, operator username, job title, and time remaining to the configured recipient when no human is detected. Credentials loaded from `config/credentials.yaml`.
+**`alert_sender.py`** — Gmail SMTP alert via `starttls`. Resolves the operator's email from a username→email map, falling back to the default recipient. Sends machine name, operator username, job title, and time remaining. Credentials loaded from `config/credentials.yaml`.
 
 **`audio_alert.py`** — espeak TTS playback via the default PulseAudio sink (Bluetooth speaker). Falls back to `festival` if espeak is unavailable. Repeats the safety announcement twice.
 
 **`main_demo.py`** — State machine orchestrator. Accepts `sim_data_file` ROS2 parameter for simulation mode. Loads Glowforge credentials from `config/credentials.yaml`. In RETURNING, re-polls Glowforge and routes directly to the next running machine, skipping the home waypoint.
 
-**`credentials.py`** — Utility loader. Reads `config/credentials.yaml` via `get_package_share_directory` and returns a dict used by `main_demo.py` and `alert_sender.py`.
+**`credentials.py`** — Utility loader. Reads `config/credentials.yaml` via `ament_index_python.get_package_share_directory()` and returns a dict used by `main_demo.py` and `alert_sender.py`.
 
 ---
 
@@ -115,7 +128,7 @@ The body is designed to resemble a carnivorous plant: the camera is hidden insid
 | Serial | Display Name | Waypoint |
 |--------|-------------|----------|
 | `WYC-332` | Glowforge-2F-01 | `glowforge_001` |
-| `CVR-883` | Glowforge-2F-02 | `glowforge_002` |
+| `VVD-329` | Glowforge-2F-02 | `glowforge_temp` |
 | `RRV-334` | Glowforge-2F-03 | `glowforge_003` |
 | `JRM-724` | Glowforge-2F-04 | `glowforge_004` |
 | `HVW-296` | Glowforge-2F-05 | `glowforge_005` |
@@ -262,7 +275,7 @@ ros2 run nav2_map_server map_saver_cli -f ~/turtlebot3_ws/src/patrol_robot/maps/
 ros2 launch patrol_robot demo.launch.py
 
 # With custom robot IP
-ros2 launch patrol_robot demo.launch.py robot_ip:= ''
+ros2 launch patrol_robot demo.launch.py robot_ip:=<robot_ip>
 
 # Simulation — one machine running
 ros2 launch patrol_robot demo.launch.py sim_data:=sim1.json
@@ -310,15 +323,15 @@ EOF
 # Enable motor power first
 ros2 service call /motor_power std_srvs/srv/SetBool "{data: true}"
 
-# Open mouth (-2.0 rad)
+# Open mouth (-1.0 rad)
 ros2 topic pub --once /gix_controller/joint_trajectory \
   trajectory_msgs/msg/JointTrajectory \
-  "{joint_names: ['gix'], points: [{positions: [-2.0], time_from_start: {sec: 2}}]}"
+  "{joint_names: ['gix'], points: [{positions: [-1.0], time_from_start: {sec: 2}}]}"
 
-# Close mouth (-2.7 rad)
+# Close mouth (-1.8 rad)
 ros2 topic pub --once /gix_controller/joint_trajectory \
   trajectory_msgs/msg/JointTrajectory \
-  "{joint_names: ['gix'], points: [{positions: [-2.7], time_from_start: {sec: 2}}]}"
+  "{joint_names: ['gix'], points: [{positions: [-1.8], time_from_start: {sec: 2}}]}"
 ```
 
 ### Test human detection
@@ -326,22 +339,6 @@ ros2 topic pub --once /gix_controller/joint_trajectory \
 ```bash
 # Call the service manually (with camera running)
 ros2 service call /detect_human std_srvs/srv/Trigger {}
-```
-
-### Simulation mode (no robot required)
-
-```bash
-# Confirm sim data is parsed correctly
-python3 -c "
-import json
-with open('test/sim1.json') as f:
-    data = json.load(f)
-print(data)
-"
-
-# Full sim launch (requires Nav2 + a map)
-ros2 launch patrol_robot demo.launch.py sim_data:=sim1.json
-```
 
 ---
 
@@ -350,18 +347,20 @@ ros2 launch patrol_robot demo.launch.py sim_data:=sim1.json
 ```
 patrol_robot/
 ├── .devcontainer/
-│   ├── Dockerfile              # ROS2 Humble + all dependencies
-│   └── devcontainer.json       # VS Code dev container config
+│   ├── Dockerfile                  # ROS2 Humble + all dependencies
+│   └── devcontainer.json           # VS Code dev container config
 ├── config/
 │   ├── waypoints.yaml              # home + 6 Glowforge waypoints
+│   ├── patrol_robot.rviz           # RViz configuration
 │   ├── credentials.yaml            # ⚠️ gitignored — fill in your own values
-│   ├── credentials.yaml.example    # committed template with placeholders
-│   └── patrol_robot.rviz           # RViz configuration
+│   └── credentials.yaml.example    # committed template with placeholders
 ├── launch/
 │   └── demo.launch.py              # single-command launch
 ├── maps/
 │   ├── gix_map.pgm                 # ⚠️ gitignored — generated by Cartographer
 │   └── gix_map.yaml                # ⚠️ gitignored — generated by Cartographer
+├── urdf/
+│   └── patrol_robot.urdf.xacro     # robot description (custom plant body + gix joint)
 ├── patrol_robot/
 │   ├── main_demo.py                # state machine
 │   ├── glowforge_monitor.py        # Glowforge API + sim mode
@@ -373,8 +372,8 @@ patrol_robot/
 │   ├── audio_alert.py              # espeak / festival TTS alert
 │   └── credentials.py             # credentials.yaml loader
 ├── test/
-│   ├── fake_one_machine.json       # sim: 1 machine running
-│   └── fake_two_machines.json      # sim: 2 machines running
+│   ├── sim1.json                   # sim: 1 machine running
+│   └── sim2.json                   # sim: 2 machines running
 ├── .gitignore
 ├── LICENSE
 ├── package.xml
@@ -394,18 +393,6 @@ patrol_robot/
 - **Motor power** — must be explicitly enabled after bringup via the `/motor_power` service call (handled automatically by the launch file at t=12s).
 - **Credentials security** — `config/credentials.yaml` is gitignored. The committed `credentials.yaml.example` contains only placeholder values. Never commit your actual credentials.
 - **YOLOv8 license** — the model is AGPL-3.0. The `.onnx` file is generated and transferred manually and is not distributed in this repository.
-
----
-
-## 👥 Team
-
-TECHIN 516 — Winter 2025, University of Washington GIX
-
-| Name | GitHub |
-|------|--------|
-| Jason Jin | https://github.com/jhx19 |
-| Lya Liu | https://github.com/peanuthater|
-| Yuhang Sun | https://github.com/yhsunhelen |
 
 ---
 
